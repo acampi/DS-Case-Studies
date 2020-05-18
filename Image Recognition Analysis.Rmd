@@ -204,9 +204,24 @@ plt.show()
 
 ### 1) Python Chunk Keyboard shortcut
 
-Set up a Keyboard shortcut for Python Code Chunks. This is a massive productivity booster for Rmarkdown documents.
+Set up a Keyboard shortcut for Python Code Chunks. This is a massive productivity booster for Rmarkdown documents
+
+### 2) Use python interactively
+
+For debugging Python Code Chunks in R Markdown, it can help to use the repl_python() to convert your Console to a Python Code Console. To do so:
+
+- In R Console, you can run python interactively using repl_python(). You will see >>> indicating you are in Python Mode.
+- Make sure the correct Python / Conda Environment is selected.
+- To escape Python in the console, just hit escape.
 
 
+### 3) Top 4 Conda Terminal Commands
+At some point you will need to create, modify, add more packages to your Conda Environment(s). Here are 4 useful commands:
+
+Run conda env list to list the available conda environments
+Run conda activate <env_name> to activate a conda environment
+Run conda update --all to update all python packages in a conda environment.
+Run conda install <package_name> to install a new package
 
 
 

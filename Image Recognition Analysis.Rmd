@@ -1,0 +1,216 @@
+---
+title: "tensorflow"
+author: "Albert Campillo"
+date: "5/15/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries
+
+```{r, echo=FALSE}
+library(tensorflow)
+library(reticulate)
+library(tidyverse)
+```
+
+## Install a Conda Environment
+
+First time only or when in need to install a new pyton environment
+
+```{r}
+# Step 1: install conda env py3.6
+install_tensorflow(
+    method               = "conda",
+    version              = "default",
+    envname              = "py.3.6",
+    conda_python_version = "3.6",
+    extra_packages       = c("matplotlib", "numpy", "pandas", "scikit-learn")
+)
+```
+
+```{r}
+# Step 2: Reticulate to use conda py3.6
+use_condaenv("py3.6", required = TRUE)
+```
+
+## Case study: Image Recognition Analysis
+
+### Step 1. Python code chunk and import libraries
+
+```{python}
+# tensorflow and tf.keras
+import tensorflow as tf
+from tensorflow import keras
+
+# Helper libraries
+import numpy as np
+import matplotlib.pyplot as plt
+```
+
+
+### Step 2. Import dataset
+
+```{python}
+fashion_mnist = keras.datasets.fashion_mnist
+
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+```
+
+### Step 3: Load images
+
+```{python}
+# 60,000 training images labelled
+train_images.shape
+
+# unique labels
+np.unique(train_labels)
+
+# the corresponding labels are
+class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
+```
+
+```{python}
+# visualize the first image with matplotlib
+plt.figure()
+plt.imshow(train_images[0])
+plt.colorbar()
+plt.grid(False)
+plt.show()
+```
+
+```{python}
+# visualize the first 25 images
+
+plt.figure(figsize=(10,10))
+for i in range(25):
+    plt.subplot(5,5,i+1)
+    plt.xticks([])
+    plt.yticks([])
+    plt.grid(False)
+    plt.imshow(train_images[i], cmap=plt.cm.binary)
+    plt.xlabel(class_names[train_labels[i]])
+plt.show()    
+```
+
+### Step 4: Modeling with Keras
+
+Make a keras model using Sequential() with 3 steps: Flatten, Dense and Dense
+
+```{python}
+model = keras.Sequential([
+    keras.layers.Flatten(input_shape=(28, 28)),
+    keras.layers.Dense(128, activation='relu'),
+    keras.layers.Dense(10)
+])
+```
+
+Next, compile the model with the 'adam' optimizer
+
+```{python}
+model.compile(
+    optimizer = 'adam',
+    loss      = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    metrics   = ['accuracy']
+)
+```
+
+Inspect the model summary
+```{python}
+model.summary()
+```
+
+### Step 5: Fit the Keras Model
+
+```{python}
+# Critical step: ensure the model works
+model.fit(train_images, train_labels, epochs=10, verbose=1)
+
+```
+
+### Step 6: Training History
+
+```{python}
+history = model.history.history
+history
+```
+
+```{r}
+py$history %>%
+    as_tibble() %>%
+    unnest(loss, accuracy) %>%
+    rowid_to_column() %>%
+    pivot_longer(-rowid) %>%
+    ggplot(aes(rowid, value, color = name)) +
+    geom_line() +
+    geom_point() +
+    labs(title = "Training Accuracy")
+```
+
+### Step 7: Test Accuracy
+
+Evaluate accuracy on the out-of-sample images
+
+```{python}
+test_loss, test_acc = model.evaluate(test_images, test_labels, verbose = 2)
+```
+
+### Step 8: Make Predictions
+
+The model produces linear outputs called "logits". The softmax layer converts the logits into probabilities
+
+```{python}
+probability_model = tf.keras.Sequential([model, tf.keras.layers.Softmax()])
+```
+
+Classify all test images (hold out)
+
+```{python}
+predictions = probability_model.predict(test_images)
+```
+
+Prediction for the first image
+
+```{python}
+predictions[0]
+```
+
+Use the np.argmax() to determine which index has the highest probability
+
+```{python}
+# np.argmax() to determine which index has the highest probability
+np.argmax(predictions[0])
+
+# np.max() to retriece its calue
+np.max(predictions[0])
+
+# get the class name
+class_names[np.argmax(predictions[0])]
+
+# visualize the image
+plt.figure()
+plt.imshow(test_images[0])
+plt.colorbar()
+
+plt.grid(False)
+plt.show()
+
+```
+
+### Pro Tips (Python in R)
+
+### 1) Python Chunk Keyboard shortcut
+
+Set up a Keyboard shortcut for Python Code Chunks. This is a massive productivity booster for Rmarkdown documents.
+
+
+
+
+
+
+
+
+

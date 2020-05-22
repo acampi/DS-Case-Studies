@@ -48,6 +48,7 @@ library(tidymodels) # loads `parsnip`, `rsample`, `recipes`, `yardstick`
 library(skimr)      # quickly get a sense of the data
 library(knitr)      # pretty html tables
 library(ranger)     # random forest library (used for churn modeling)
+library(ggrepel)    # add labels in ggplot2
 ```
 
 ## Dataset
@@ -118,7 +119,7 @@ Steps:
 - Then, I prepare the recipe by mixing the ingredients with the `prep()` function.
 
 ```{r}
-reciple_simple <- function(dataset) {
+recipe_simple <- function(dataset) {
     recipe(Churn ~ ., data = dataset) %>%
         step_string2factor(all_nominal(), -all_outcomes()) %>%
         prep(data = dataset)
@@ -157,6 +158,8 @@ logistic_glm <- logistic_reg(mode = "classification") %>%
 
 *Assess Performance*
 
+First, I compare the model's predictions against the actual outcomes
+
 ```{r}
 predictions_glm <- logistic_glm %>%
     predict(new_data = test_baked) %>%
@@ -165,8 +168,134 @@ predictions_glm <- logistic_glm %>%
 predictions_glm %>% head()
 ```
 
+I will base my classification model's performance upon 4 metrics: __accuracy__, __precision__, __recall__ & __F1 score__.
+These can be derived from the __Confusion Matrix__, used to describe the model performance on a set of test data for which the true values are known.
+
+The Confusion Matrix shows:
+- __True Positives (Tp)__: model correctly predicts true cases
+- __False Positives (Fp)__: model fails to predict true negative cases
+- __False Negatives (Fn)__: model fails to predict true positive cases
+- __True Negatives (Tn)__: model correctly predicts negative cases
+
+Then allows to calculate the desired metrics:
+- __Precision__ (or PPV -Positive Predicted Value-): Tp/(Tp+Fp)
+- __Recall__ (or Sensitivity): Tp/(Tp+Fn)
+- __Negative Predicted Value (NPV)__: Tn/(Tn+Fn)
+- __Specificity__: Tn/(Tn+Fp)
+- __Accuracy__: (Tp+Tn)/(Tp+Tn+Fp+Fn)
+- __F1 Score__: harmonic average of Precision and Recall. Best value = 1 (perfect)
+
+![Confusion Matrix](Confusion Matrix.png)
+
+```{r}
+# Confusion table
+table <- predictions_glm %>%
+    conf_mat(Churn, .pred_class) %>% #conf_mat from `yardstick` package
+    pluck(1) %>%
+    as_tibble() 
+
+# Plot Confusion Matrix
+plotTable <- table %>%
+    mutate(goodbad= ifelse(table$Prediction == table$Truth, "good", "bad")) %>%
+    group_by(Truth) %>%
+    mutate(prop = n/sum(n)) %>%
+    
+    ggplot(mapping = aes(x = Truth, y = Prediction, fill = goodbad,  alpha = prop)) +
+    geom_tile(show.legend = TRUE) + 
+    geom_text(aes(label = n), vjust = .5, fontface = "bold", alpha = 1, size = 8) +
+    scale_fill_manual(values = c(good = "green", bad = "red")) +
+    theme_bw() +
+    ggtitle("Confusion Matrix")
+
+plotTable
+```
+Remarks on metrics:
+- __Accuracy__ is not a very realiable metric, as will provide misleading results in case of inbalanced data. In our case, accuracy reaches 80% with only very basic data manipulation
+- __Precision__ shows how sensitive the model is to False Positives
+- __Recall__ shows how sensitive the model is to False Negatives
 
 
+```{r}
+predictions_glm %>%
+    metrics(Churn, .pred_class) %>%
+    add_row(precision(predictions_glm, Churn, .pred_class)) %>%
+    add_row(recall(predictions_glm, Churn, .pred_class)) %>%
+    add_row(f_meas(predictions_glm, Churn, .pred_class)) %>%
+    select(-.estimator)
+```
+
+# 4.0. Random Forest - ML modeling and Cross Validation
+
+Use the `tidymodels` modeling framework to fit a __Random Forest__ with the `ranger` engine
+
+
+## 4.1. 10-fold Cross Validation
+I use a 10 fold cross validation to further refine the model's predicitive power, using `vfold_cv` from `rsample`, which splits again the initial training dataset
+
+```{r}
+cross_val_tbl <- vfold_cv(train_tbl, v = 10)
+
+# verifies that 563 observations have been retained at each round, and used to validate the model
+cross_val_tbl %>% pluck("splits",1)
+```
+
+## 4.2. Machine Learning
+
+### Random Forest
+
+Switching to another model requires only to:
+- change the type of model to `random_forest`, 
+- add its hyperparameters, and
+- change the set_engine argument to ranger.
+
+I bundle all steps into a function that estimates the model across all folds, runs predictions and returns a tibble with all results.
+Prior to recipe prepping, I add an extra step to map the cross-validation splits to the `analysis()` and `assessment()` functions.
+
+```{r}
+rf_fun <- function(split, id, try, tree) {
+    
+    analysis_set     <- split %>% analysis()
+    analysis_prepped <- analysis_set %>% recipe_simple ()
+    analysis_baked   <- analysis_prepped %>% bake(new_data = analysis_set)
+    
+    model_rf <-
+        rand_forest(
+            mode = "classification",
+            mtry = try,
+            trees = tree
+        ) %>%
+        set_engine("ranger",
+                   importance = "impurity") %>%
+        fit(Churn ~., data = analysis_baked)
+    
+    assessment_set     <- split %>% assessment()
+    assessment_prepped <- assessment_set %>% reciple_simple()
+    assessment_baked   <- assessment_prepped %>% bake(new_data = assessment_set)
+    
+    tibble(
+        "id"         = id,
+        "truth"      = assessment_baked$Churn,
+        "prediction" = model_rf %>%
+            predict(new_data = assessment_baked) %>%
+            unlist()
+    )
+}
+```
+
+
+### Modeling with purrr
+
+I iteratively apply the random forest modeling function, `rf_fun()`, to each of the 10 cross validation folds using `purrr`
+
+```{r}
+pred_rf <- map2_df(
+    .x = cross_val_tbl$splits,
+    .y = cross_val_tbl$id,
+    ~ rf_fun(split = .x, id = .y, try = 3, tree = 200)
+)
+
+head(pred_rf)
+```
 
 
 
